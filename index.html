@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aladdin · KEY Dashboard (biểu đồ)</title>
+<title>Aladdin · KEY Dashboard</title>
 <style>
 :root{
   --bg:#f3f7fc; --card:#fff; --ink:#14233b; --muted:#66748b; --line:#e2e9f3;
@@ -144,7 +144,6 @@ footer li{margin:4px 0}
       <span class="live"><i class="dot" id="dot"></i><span id="upd">—</span></span>
       <select id="month" aria-label="Chọn tháng"></select>
       <button id="refresh" type="button">Làm mới</button>
-      <a class="btn" id="v1" href="#" target="_top" hidden>Bản 1</a>
     </div>
   </header>
   <div class="time" id="time" hidden></div>
@@ -176,7 +175,7 @@ footer li{margin:4px 0}
 (function(){
 'use strict';
 var REFRESH_MS=60000;
-var DATA_URL='https://script.google.com/macros/s/AKfycbyLxsOLIvMFXEb8gDjYyDSK1_QJB4qL2TU_rcNJvF7BXIAl_9rQPr8z2HAMO-0ny2dR/exec'; // bản GitHub Pages: URL web app Apps Script (build-pages.sh điền vào)
+var DATA_BASE='https://gist.githubusercontent.com/PhuPD/7ec8a57ef4201b70ee86140967efe262/raw', APPS_URL='https://script.google.com/macros/s/AKfycbyLxsOLIvMFXEb8gDjYyDSK1_QJB4qL2TU_rcNJvF7BXIAl_9rQPr8z2HAMO-0ny2dR/exec'; // bản GitHub Pages: build-pages.sh điền URL gist (file tĩnh, nhanh) và URL Apps Script (live, có thể chậm)
 var state={data:null,filter:'ALL',month:null,loading:false,open:{}};
 var $=function(id){return document.getElementById(id);};
 var nf0=new Intl.NumberFormat('vi-VN',{maximumFractionDigits:0}), nf1=new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}), nf2=new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2});
@@ -377,17 +376,31 @@ function fetchJson(url,ms){
   return fetch(url,ctl?{signal:ctl.signal}:{}).then(function(r){clearTimeout(timer);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .catch(function(e){clearTimeout(timer);throw (e&&e.name==='AbortError')?new Error('chờ quá lâu, máy chủ Google chưa trả lời'):e;});
 }
+var liveBusy=false;
+function monthFile(){return state.month?'data-'+encodeURIComponent(state.month)+'.json':'data.json';}
+function loadStatic(){return fetchJson(DATA_BASE+'/'+monthFile()+'?t='+Math.floor(Date.now()/60000),20000);}
+function loadLive(){return fetchJson(APPS_URL+(APPS_URL.indexOf('?')<0?'?':'&')+'data=1&month='+encodeURIComponent(state.month||'')+'&_='+Date.now(),90000);}
 function load(){
   if(state.loading)return;state.loading=true;
   var key='kd2:'+(state.month||'auto');
-  var done=function(d){state.loading=false;if(d&&d.error){fail(d.error);return;}state.data=d;lsSet(key,d);render();};
+  var accept=function(d){if(d&&d.error)throw new Error(d.error);state.data=d;lsSet(key,d);render();};
+  var done=function(d){state.loading=false;try{accept(d);}catch(e){fail(e.message);}};
   var bad=function(e){state.loading=false;fail(e&&e.message?e.message:String(e));};
   if(window.google&&google.script&&google.script.run){
     google.script.run.withSuccessHandler(done).withFailureHandler(bad).getDashboardData(state.month||'');
-  }else if(DATA_URL){
-    fetchJson(DATA_URL+(DATA_URL.indexOf('?')<0?'?':'&')+'data=1&month='+encodeURIComponent(state.month||'')+'&_='+Date.now(),45000).then(done).catch(bad);
+  }else if(DATA_BASE){
+    // 1) file tĩnh: hiện ngay; 2) nếu lỗi thì gọi Apps Script; 3) nền: thử nâng cấp lên số live
+    loadStatic().then(done,function(){return APPS_URL?loadLive().then(done,bad):bad(new Error('không đọc được file dữ liệu'));}).then(function(){
+      if(!APPS_URL||liveBusy)return; liveBusy=true;
+      loadLive().then(function(d){
+        liveBusy=false;
+        if(!d||d.error||!d.brands)return;
+        if(state.data&&state.data.month!==d.month)return;
+        if(!state.data||!state.data.generatedAt||d.generatedAt>state.data.generatedAt){state.data=d;lsSet(key,d);render();}
+      },function(){liveBusy=false;});
+    });
   }else{
-    fetchJson('data.json?'+Date.now(),15000).then(done).catch(bad);
+    fetchJson('data.json?'+Date.now(),15000).then(done,bad);
   }
 }
 
@@ -413,9 +426,6 @@ $('refresh').addEventListener('click',load);
 $('month').addEventListener('change',function(e){state.month=e.target.value;load();});
 document.addEventListener('visibilitychange',function(){if(!document.hidden)load();});
 setInterval(function(){if(!document.hidden)load();},REFRESH_MS);
-if(window.google&&google.script&&google.script.run){
-  google.script.run.withSuccessHandler(function(u){var a=$('v1');a.href=u;a.hidden=false;}).getAppUrl();
-}
 var first=lsGet('kd2:auto');
 if(first&&first.brands){state.data=first;render();$('upd').textContent='Bản đã lưu · đang cập nhật…';}
 load();
