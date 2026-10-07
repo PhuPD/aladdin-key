@@ -367,19 +367,27 @@ function render(){
 
 function fail(msg){
   $('dot').className='dot err';$('upd').textContent='Lỗi tải';
-  $('notices').innerHTML='<div class="notice err">Không tải được dữ liệu: '+esc(msg)+'. Bấm "Làm mới" để thử lại'+(state.data?' (đang hiển thị bản đã tải trước đó).':'.')+'</div>';
-  if(!state.data)$('view').innerHTML='<div class="empty">Chưa có dữ liệu.</div>';
+  $('notices').innerHTML='<div class="notice err">Không tải được dữ liệu: '+esc(msg)+'. Bấm "Làm mới" để thử lại'+(state.data?' (đang hiển thị bản đã lưu trước đó).':'.')+'</div>';
+  if(!state.data)$('view').innerHTML='<div class="empty">Chưa có dữ liệu. Lần mở đầu có thể mất vài giây, bấm "Làm mới" nếu quá lâu.</div>';
+}
+function lsGet(k){try{var v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch(e){return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function fetchJson(url,ms){
+  var ctl=window.AbortController?new AbortController():null,timer=setTimeout(function(){if(ctl)ctl.abort();},ms);
+  return fetch(url,ctl?{signal:ctl.signal}:{}).then(function(r){clearTimeout(timer);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .catch(function(e){clearTimeout(timer);throw (e&&e.name==='AbortError')?new Error('chờ quá lâu, máy chủ Google chưa trả lời'):e;});
 }
 function load(){
   if(state.loading)return;state.loading=true;
-  var done=function(d){state.loading=false;if(d&&d.error){fail(d.error);return;}state.data=d;render();};
+  var key='kd2:'+(state.month||'auto');
+  var done=function(d){state.loading=false;if(d&&d.error){fail(d.error);return;}state.data=d;lsSet(key,d);render();};
   var bad=function(e){state.loading=false;fail(e&&e.message?e.message:String(e));};
   if(window.google&&google.script&&google.script.run){
     google.script.run.withSuccessHandler(done).withFailureHandler(bad).getDashboardData(state.month||'');
   }else if(DATA_URL){
-    fetch(DATA_URL+(DATA_URL.indexOf('?')<0?'?':'&')+'data=1&month='+encodeURIComponent(state.month||'')+'&_='+Date.now()).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(done).catch(bad);
+    fetchJson(DATA_URL+(DATA_URL.indexOf('?')<0?'?':'&')+'data=1&month='+encodeURIComponent(state.month||'')+'&_='+Date.now(),45000).then(done).catch(bad);
   }else{
-    fetch('data.json?'+Date.now()).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(done).catch(bad);
+    fetchJson('data.json?'+Date.now(),15000).then(done).catch(bad);
   }
 }
 
@@ -408,6 +416,8 @@ setInterval(function(){if(!document.hidden)load();},REFRESH_MS);
 if(window.google&&google.script&&google.script.run){
   google.script.run.withSuccessHandler(function(u){var a=$('v1');a.href=u;a.hidden=false;}).getAppUrl();
 }
+var first=lsGet('kd2:auto');
+if(first&&first.brands){state.data=first;render();$('upd').textContent='Bản đã lưu · đang cập nhật…';}
 load();
 })();
 </script>
