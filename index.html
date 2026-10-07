@@ -174,7 +174,6 @@ footer li{margin:4px 0}
 <script>
 (function(){
 'use strict';
-var REFRESH_MS=60000;
 var DATA_BASE='https://gist.githubusercontent.com/PhuPD/7ec8a57ef4201b70ee86140967efe262/raw', APPS_URL='https://script.google.com/macros/s/AKfycbyLxsOLIvMFXEb8gDjYyDSK1_QJB4qL2TU_rcNJvF7BXIAl_9rQPr8z2HAMO-0ny2dR/exec'; // bản GitHub Pages: build-pages.sh điền URL gist (file tĩnh, nhanh) và URL Apps Script (live, có thể chậm)
 var state={data:null,filter:'ALL',month:null,loading:false,open:{}};
 var $=function(id){return document.getElementById(id);};
@@ -183,6 +182,10 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function isNum(v){return typeof v==='number'&&isFinite(v);}
 function pct(v,d){return isNum(v)?(d===1?nf1:nf0).format(v*100)+'%':'—';}
 function full(v){return isNum(v)?nf0.format(v):'—';}
+/* Nhịp cập nhật sheet: Ads tự chạy 07:30; doanh thu nhân viên nhập dần đến 11:00; từ 11:00 số liệu đứng yên đến 08:00 hôm sau. */
+function vnMins(){var p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());return +p.filter(function(x){return x.type==='hour';})[0].value*60+ +p.filter(function(x){return x.type==='minute';})[0].value;}
+function inEntryWindow(){var m=vnMins();return m>=450&&m<660;}   // 07:30–11:00: doanh thu đang được nhập dần
+function inChangeWindow(){var m=vnMins();return m>=445&&m<675;}  // 07:25–11:15: số liệu còn có thể đổi
 function strip(s){return String(s).replace(/Đ/g,'D').replace(/đ/g,'d').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();}
 
 /* ── quy tắc màu của anh Phú ── */
@@ -334,6 +337,7 @@ function render(){
     $('sub').textContent='Số liệu đến hết '+(dd<10?'0'+dd:dd)+'/'+(mo<10?'0'+mo:mo)+'/'+yr;
     var tm=$('time');tm.hidden=false;
     tm.innerHTML='<b>'+dd+'/'+ref.daysTotal+' ngày</b><div class="trk"><i style="width:'+t*100+'%"></i></div><b>'+pct(t,1)+'</b>';
+    if(inEntryWindow())nt+='<div class="notice">Đang trong giờ nhân viên cập nhật doanh thu (đến 11h): doanh thu có thể chưa đủ nên tốc độ doanh thu tạm thấp. Nên chốt quyết định ngân sách sau 11h.</div>';
     if(dd<7)nt+='<div class="notice">Mới '+dd+' ngày số liệu, tốc độ còn dao động mạnh.</div>';
     var odd=data.brands.filter(function(b){return b.found&&b.daysData!==dd;}).map(function(b){return b.name+' '+b.daysData+' ngày';});
     if(odd.length)nt+='<div class="notice">Số ngày giữa các brand lệch nhau ('+esc(odd.join(', '))+') nên không so tốc độ chéo brand.</div>';
@@ -360,7 +364,9 @@ function render(){
     h+='</div>';
   });
   $('view').innerHTML=h;
-  if(data.generatedAt){var g=new Date(data.generatedAt);$('upd').textContent='Cập nhật '+g.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});}
+  if(data.generatedAt){var g=new Date(data.generatedAt),tz={timeZone:'Asia/Ho_Chi_Minh'};
+    var same=g.toLocaleDateString('vi-VN',tz)===new Date().toLocaleDateString('vi-VN',tz);
+    $('upd').textContent='Số liệu lúc '+g.toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit'})+(same?'':' '+g.toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit'}));}
   $('dot').className='dot';
 }
 
@@ -391,7 +397,7 @@ function load(){
   }else if(DATA_BASE){
     // 1) file tĩnh: hiện ngay; 2) nếu lỗi thì gọi Apps Script; 3) nền: thử nâng cấp lên số live
     loadStatic().then(done,function(){return APPS_URL?loadLive().then(done,bad):bad(new Error('không đọc được file dữ liệu'));}).then(function(){
-      if(!APPS_URL||liveBusy)return; liveBusy=true;
+      if(!APPS_URL||liveBusy||!inChangeWindow())return; liveBusy=true;
       loadLive().then(function(d){
         liveBusy=false;
         if(!d||d.error||!d.brands)return;
@@ -422,12 +428,15 @@ document.addEventListener('click',function(e){
   var r=e.target.closest('.row');
   if(r){var rid=r.getAttribute('data-id');state.open[rid]=!state.open[rid];r.classList.toggle('open',!!state.open[rid]);}
 });
-$('refresh').addEventListener('click',load);
+var lastLoad=0,_load=load;
+load=function(){lastLoad=Date.now();_load();};
+$('refresh').addEventListener('click',function(){load();});
 $('month').addEventListener('change',function(e){state.month=e.target.value;load();});
-document.addEventListener('visibilitychange',function(){if(!document.hidden)load();});
-setInterval(function(){if(!document.hidden)load();},REFRESH_MS);
+// trong giờ số liệu còn đổi: 2 phút/lần; ngoài giờ: 30 phút/lần (số liệu đứng yên)
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&Date.now()-lastLoad>60000)load();});
+setInterval(function(){if(document.hidden)return;var gap=inChangeWindow()?120000:1800000;if(Date.now()-lastLoad>=gap)load();},60000);
 var first=lsGet('kd2:auto');
-if(first&&first.brands){state.data=first;render();$('upd').textContent='Bản đã lưu · đang cập nhật…';}
+if(first&&first.brands){state.data=first;render();$('upd').textContent='Đang cập nhật…';}
 load();
 })();
 </script>
