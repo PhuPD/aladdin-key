@@ -114,6 +114,20 @@ th:first-child,td:first-child{text-align:left}
 td{padding:6px;border-bottom:1px solid #eef2f8;text-align:right;font-variant-numeric:tabular-nums}
 td:first-child{font-weight:600}
 .chip{display:inline-block;padding:1px 8px;border-radius:999px;font-weight:700;font-size:12px}
+th small{display:block;font-size:10px;text-transform:none;letter-spacing:0;font-weight:600}
+/* biểu đồ xu hướng theo ngày */
+.trend{margin-top:12px;cursor:default}
+.trend-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 12px;margin-bottom:4px}
+.trend-h b{font-size:12.5px}
+.lgd{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);font-weight:600}
+.lgd i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
+.chart{position:relative;width:100%;height:210px}
+.chart svg{display:block;overflow:visible}
+.chart .hit{fill:transparent;cursor:pointer}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line);box-shadow:0 4px 14px rgba(20,35,59,.14);border-radius:8px;padding:5px 9px;font-size:12px;line-height:1.35;white-space:nowrap;z-index:3;transform:translate(-50%,calc(-100% - 10px))}
+.tip b{font-size:13px;font-variant-numeric:tabular-nums}
+.tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.trend-n{font-size:11px;color:var(--muted);margin-top:2px}
 .empty{padding:36px;text-align:center;color:var(--muted)}
 
 footer{margin-top:22px;font-size:12.5px;color:var(--muted)}
@@ -126,6 +140,8 @@ footer li{margin:4px 0}
   .rings{grid-template-columns:1fr 1fr}
   .boards{grid-template-columns:1fr}
   .mets{grid-template-columns:1fr 1fr 1fr}
+  .tw table{min-width:720px}
+  .tw td:first-child{white-space:nowrap}
 }
 @media (max-width:520px){
   h1{font-size:18px}
@@ -269,15 +285,94 @@ function mbar(p,kind){
 }
 function met(lbl,p,kind){var g=kind==='spend'?gradeSpend(p):gradeKpi(p);return '<div class="met"><div class="ml">'+lbl+'</div><div class="mv t-'+g+'">'+pct(p)+'</div>'+mbar(p,kind)+'</div>';}
 
-function tableHtml(region){
-  var h='<div class="tw"><table><thead><tr><th>KEY DRIVE</th><th>Mục tiêu</th><th>Lũy kế</th><th>Tốc độ tháng</th></tr></thead><tbody>';
+/* ngày thứ i (0-based) của tháng đang xem → {lbl:'5/10', dow:'T2'} */
+var DOW=['CN','T2','T3','T4','T5','T6','T7'];
+function dayInfo(i){
+  var ym=(state.data&&state.data.month||'').split('-'),y=+ym[0],m=+ym[1],d=i+1;
+  return {lbl:d+'/'+m,dow:(y&&m)?DOW[new Date(y,m-1,d).getDay()]:''};
+}
+function lastDay(brand){return isNum(brand.daysData)&&brand.daysData>0?brand.daysData-1:-1;}
+
+function tableHtml(brand,region){
+  var li=lastDay(brand),di=li>=0?dayInfo(li):null;
+  var h='<div class="tw"><table><thead><tr><th>KEY DRIVE</th><th>Mục tiêu</th><th>Lũy kế</th><th>Mục tiêu TB/ngày còn lại</th><th>Ngày có số liệu gần nhất'+(di?'<small>'+di.dow+' '+di.lbl+'</small>':'')+'</th><th>Tốc độ tháng</th></tr></thead><tbody>';
   region.rows.forEach(function(r){
     var ratio=r.key==='ads',f=function(v){return ratio?(isNum(v)?nf2.format(v*100)+'%':'—'):full(v);};
     var g=(r.key==='fb'||r.key==='mkt')?gradeSpend(r.pace):(r.key==='other'?'none':gradeKpi(r.pace));
-    h+='<tr><td>'+esc(r.label)+'</td><td>'+f(r.target)+'</td><td>'+f(r.actual)+'</td><td><span class="chip g-'+g+'">'+(isNum(r.pace)?nf1.format(r.pace*100)+'%':'—')+'</span></td></tr>';
+    var last=(li>=0&&r.daily)?r.daily[li]:null;
+    h+='<tr><td>'+esc(r.label)+'</td><td>'+f(r.target)+'</td><td>'+f(r.actual)+'</td><td>'+f(r.remain)+'</td><td>'+f(last)+'</td><td><span class="chip g-'+g+'">'+(isNum(r.pace)?nf1.format(r.pace*100)+'%':'—')+'</span></td></tr>';
   });
   return h+'</tbody></table></div>';
 }
+
+/* ── biểu đồ xu hướng: mỗi chỉ số tự co giãn theo chính nó (cao nhất = đỉnh, thấp nhất = đáy; chỉ giá trị 0 mới chạm trục) ── */
+var SERIES=[
+  {k:'rev',name:'Doanh thu thuần',color:'#2a78d6'},
+  {k:'cost',name:'Tổng chi phí Ads',color:'#eb6834'},
+  {k:'buy',name:'Lượt mua',color:'#1baf7a'}
+];
+function trendSeries(brand,region){
+  var n=Math.max(0,lastDay(brand)+1),pick=function(k){var x=row(region,k);return x&&x.daily?x.daily:[];};
+  var rev=pick('rev'),fb=pick('fb'),mkt=pick('mkt'),buy=pick('buy'),out={n:n};
+  out.rev=[];out.cost=[];out.buy=[];
+  for(var i=0;i<n;i++){
+    out.rev.push(isNum(rev[i])?rev[i]:null);
+    out.cost.push((isNum(fb[i])||isNum(mkt[i]))?(fb[i]||0)+(mkt[i]||0):null);
+    out.buy.push(isNum(buy[i])?buy[i]:null);
+  }
+  return out;
+}
+function trendHtml(brand,region){
+  var s=trendSeries(brand,region),any=false;
+  SERIES.forEach(function(x){s[x.k].forEach(function(v){if(isNum(v))any=true;});});
+  if(!s.n||!any)return '';
+  return '<div class="trend"><div class="trend-h"><b>Xu hướng theo ngày</b><div class="lgd">'+
+    SERIES.map(function(x){return '<span><i style="background:'+x.color+'"></i>'+x.name+'</span>';}).join('')+'</div></div>'+
+    '<div class="chart" data-chart="'+esc(brand.key+'|'+region.name)+'"></div>'+
+    '<div class="trend-n">Mỗi đường tự co giãn theo thang riêng (ngày cao nhất ở đỉnh, thấp nhất ở đáy, chỉ giá trị 0 chạm trục) để so xu hướng; rê chuột / chạm vào chấm để xem số.</div></div>';
+}
+function scaleFn(vals){
+  var nz=vals.filter(function(v){return isNum(v)&&v>0;});
+  if(!nz.length)return function(){return 0;};
+  var mx=Math.max.apply(null,nz),mn=Math.min.apply(null,nz),FL=.1;
+  return function(v){if(!isNum(v)||v<=0)return 0;return mx===mn?.6:FL+(v-mn)/(mx-mn)*(1-FL);};
+}
+function drawChart(el){
+  var ref=chartRefs[el.getAttribute('data-chart')];if(!ref)return;
+  var W=el.clientWidth;if(!W)return;
+  var H=el.clientHeight||210,pl=14,pr=14,pt=14,pb=24,iw=W-pl-pr,ih=H-pt-pb;
+  var s=trendSeries(ref.brand,ref.region),n=s.n;
+  var X=function(i){return n>1?pl+i*iw/(n-1):pl+iw/2;},Y=function(f){return pt+ih*(1-f);};
+  var svg='<svg width="'+W+'" height="'+H+'" role="img" aria-label="Xu hướng doanh thu, chi phí, lượt mua theo ngày">';
+  [0,.5,1].forEach(function(f){svg+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(f)+'" y2="'+Y(f)+'" stroke="'+(f?'#eef2f8':'#c9d3e1')+'" stroke-width="1"/>';});
+  var step=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(iw/38))));
+  // nhãn ngày cách đều; luôn có ngày cuối, trừ khi quá sát nhãn liền trước
+  for(var i=0;i<n;i++)if(i%step===0||(i===n-1&&i%step>=step/2)){
+    svg+='<text x="'+X(i)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10.5" fill="#66748b">'+dayInfo(i).lbl+'</text>';}
+  var dots='',hits='';
+  SERIES.forEach(function(se,si){
+    var vals=s[se.k],sc=scaleFn(vals),d='',pen=false;
+    vals.forEach(function(v,i){
+      if(!isNum(v)){pen=false;return;}
+      var x=X(i),y=Y(sc(v));d+=(pen?'L':'M')+x.toFixed(1)+' '+y.toFixed(1);pen=true;
+      dots+='<circle cx="'+x+'" cy="'+y+'" r="3.6" fill="'+se.color+'" stroke="#fff" stroke-width="1.5"/>';
+      hits+='<circle class="hit" cx="'+x+'" cy="'+y+'" r="10" data-s="'+si+'" data-i="'+i+'"/>';
+    });
+    svg+='<path d="'+d+'" fill="none" stroke="'+se.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  el.innerHTML=svg+dots+hits+'</svg><div class="tip" hidden></div>';
+}
+function drawCharts(){var els=document.querySelectorAll('.row.open .chart');for(var i=0;i<els.length;i++)drawChart(els[i]);}
+function showTip(c){
+  var el=c.closest('.chart'),ref=chartRefs[el.getAttribute('data-chart')];if(!ref)return;
+  var se=SERIES[+c.getAttribute('data-s')],i=+c.getAttribute('data-i'),v=trendSeries(ref.brand,ref.region)[se.k][i],di=dayInfo(i);
+  var tip=el.querySelector('.tip'),x=+c.getAttribute('cx'),y=+c.getAttribute('cy');
+  tip.innerHTML='<i style="background:'+se.color+'"></i>'+se.name+' · '+di.dow+' '+di.lbl+'<br><b>'+full(v)+'</b>';
+  tip.hidden=false;
+  var w=tip.offsetWidth,W=el.clientWidth;
+  tip.style.left=Math.max(w/2,Math.min(W-w/2,x))+'px';tip.style.top=y+'px';
+}
+var chartRefs={};
 
 function regionRow(brand,region,t){
   var d=derive(region,t),id=brand.key+'|'+region.name,open=state.open[id];
@@ -285,7 +380,8 @@ function regionRow(brand,region,t){
   if(d.hasTarget||d.spend.t){
     h+='<div class="mets">'+met('Doanh thu',d.rev&&d.rev.pace)+met('Chi Ads',d.spend.pace,'spend')+met('Lượt mua',d.buy&&d.buy.pace)+met('Giá mua',d.cpa&&d.cpa.pace)+met('Ads/DT',d.ads&&d.ads.pace)+'</div>';
   }
-  h+='<div class="detail"><div class="why">'+esc(d.verdict.why)+'</div>'+tableHtml(region)+'</div></article>';
+  chartRefs[id]={brand:brand,region:region};
+  h+='<div class="detail"><div class="why">'+esc(d.verdict.why)+'</div>'+tableHtml(brand,region)+trendHtml(brand,region)+'</div></article>';
   return h;
 }
 
@@ -350,6 +446,7 @@ function render(){
   $('pills').innerHTML=pills;
 
   var shown=data.brands.filter(function(b){return state.filter==='ALL'||b.key===state.filter;});
+  chartRefs={};
   var h='<h2>Tiến độ doanh thu theo brand <span>vòng tô = % mục tiêu đạt · vạch đen = thời gian đã qua</span></h2><div class="rings">';
   data.brands.forEach(function(b){
     h+='<div class="rc'+(state.filter===b.key?' on':'')+'" data-f="'+b.key+'"><div class="nm">'+esc(b.name)+'</div>'+(b.found?ring(b,timeFrac(b)):'<div class="empty" style="padding:20px">Chưa có tab</div>')+'</div>';
@@ -364,6 +461,7 @@ function render(){
     h+='</div>';
   });
   $('view').innerHTML=h;
+  drawCharts();
   if(data.generatedAt){var g=new Date(data.generatedAt),tz={timeZone:'Asia/Ho_Chi_Minh'};
     var same=g.toLocaleDateString('vi-VN',tz)===new Date().toLocaleDateString('vi-VN',tz);
     $('upd').textContent='Số liệu lúc '+g.toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit'})+(same?'':' '+g.toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit'}));}
@@ -423,11 +521,18 @@ document.addEventListener('click',function(e){
     if(el){el.classList.add('hl');el.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){el.classList.remove('hl');},1600);}
     return;
   }
+  if(e.target.closest('.trend'))return; // chạm vào biểu đồ không đóng khu vực
   var f=e.target.closest('[data-f]');
   if(f){var k=f.getAttribute('data-f');state.filter=(state.filter===k&&k!=='ALL')?'ALL':k;render();return;}
   var r=e.target.closest('.row');
-  if(r){var rid=r.getAttribute('data-id');state.open[rid]=!state.open[rid];r.classList.toggle('open',!!state.open[rid]);}
+  if(r){var rid=r.getAttribute('data-id');state.open[rid]=!state.open[rid];r.classList.toggle('open',!!state.open[rid]);
+    if(state.open[rid]){var ch=r.querySelector('.chart');if(ch)drawChart(ch);}}
 });
+// tooltip biểu đồ: rê chuột (desktop) hoặc chạm (điện thoại)
+document.addEventListener('pointerover',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
+document.addEventListener('pointerout',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c&&e.pointerType==='mouse'){var t=c.closest('.chart').querySelector('.tip');if(t)t.hidden=true;}});
+document.addEventListener('pointerdown',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
+var rsz;window.addEventListener('resize',function(){clearTimeout(rsz);rsz=setTimeout(drawCharts,120);});
 var lastLoad=0,_load=load;
 load=function(){lastLoad=Date.now();_load();};
 $('refresh').addEventListener('click',function(){load();});
