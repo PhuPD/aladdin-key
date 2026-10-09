@@ -123,8 +123,8 @@ th small{display:block;font-size:10px;text-transform:none;letter-spacing:0;font-
 .lgd i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
 .chart{position:relative;width:100%;height:210px}
 .chart svg{display:block;overflow:visible}
-.chart .hit{fill:transparent;cursor:pointer}
-.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line);box-shadow:0 4px 14px rgba(20,35,59,.14);border-radius:8px;padding:5px 9px;font-size:12px;line-height:1.35;white-space:nowrap;z-index:3;transform:translate(-50%,calc(-100% - 10px))}
+.chart .hit{fill:transparent;cursor:crosshair}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line);box-shadow:0 4px 14px rgba(20,35,59,.14);border-radius:8px;padding:6px 10px;font-size:12px;line-height:1.5;white-space:nowrap;z-index:3}
 .tip b{font-size:13px;font-variant-numeric:tabular-nums}
 .tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
 .trend-n{font-size:11px;color:var(--muted);margin-top:2px}
@@ -305,11 +305,12 @@ function tableHtml(brand,region){
   return h+'</tbody></table></div>';
 }
 
-/* ── biểu đồ xu hướng: mỗi chỉ số tự co giãn theo chính nó (cao nhất = đỉnh, thấp nhất = đáy; chỉ giá trị 0 mới chạm trục) ── */
+/* ── biểu đồ xu hướng: mỗi chỉ số tự co giãn theo chính nó (cao nhất = đỉnh, thấp nhất = đáy; chỉ giá trị 0 mới chạm trục).
+   Đỉnh/đáy của từng chỉ số lệch nhau ~6% chiều cao để các chấm ít trùng khít; rê chuột theo cột ngày hiện đủ 3 số. ── */
 var SERIES=[
-  {k:'rev',name:'Doanh thu thuần',color:'#2a78d6'},
-  {k:'cost',name:'Tổng chi phí Ads',color:'#eb6834'},
-  {k:'buy',name:'Lượt mua',color:'#1baf7a'}
+  {k:'rev',name:'Doanh thu thuần',color:'#2a78d6',lo:.18,hi:1},
+  {k:'cost',name:'Tổng chi phí Ads',color:'#eb6834',lo:.12,hi:.94},
+  {k:'buy',name:'Lượt mua',color:'#1baf7a',lo:.06,hi:.88}
 ];
 function trendSeries(brand,region){
   var n=Math.max(0,lastDay(brand)+1),pick=function(k){var x=row(region,k);return x&&x.daily?x.daily:[];};
@@ -329,13 +330,13 @@ function trendHtml(brand,region){
   return '<div class="trend"><div class="trend-h"><b>Xu hướng theo ngày</b><div class="lgd">'+
     SERIES.map(function(x){return '<span><i style="background:'+x.color+'"></i>'+x.name+'</span>';}).join('')+'</div></div>'+
     '<div class="chart" data-chart="'+esc(brand.key+'|'+region.name)+'"></div>'+
-    '<div class="trend-n">Mỗi đường tự co giãn theo thang riêng (ngày cao nhất ở đỉnh, thấp nhất ở đáy, chỉ giá trị 0 chạm trục) để so xu hướng; rê chuột / chạm vào chấm để xem số.</div></div>';
+    '<div class="trend-n">Mỗi đường tự co giãn theo thang riêng (ngày cao nhất ở đỉnh, thấp nhất ở đáy, chỉ giá trị 0 chạm trục) để so xu hướng; rê chuột / chạm vào một ngày để xem đủ 3 số.</div></div>';
 }
-function scaleFn(vals){
+function scaleFn(vals,lo,hi){
   var nz=vals.filter(function(v){return isNum(v)&&v>0;});
   if(!nz.length)return function(){return 0;};
-  var mx=Math.max.apply(null,nz),mn=Math.min.apply(null,nz),FL=.1;
-  return function(v){if(!isNum(v)||v<=0)return 0;return mx===mn?.6:FL+(v-mn)/(mx-mn)*(1-FL);};
+  var mx=Math.max.apply(null,nz),mn=Math.min.apply(null,nz);
+  return function(v){if(!isNum(v)||v<=0)return 0;return mx===mn?(lo+hi)/2:lo+(v-mn)/(mx-mn)*(hi-lo);};
 }
 function drawChart(el){
   var ref=chartRefs[el.getAttribute('data-chart')];if(!ref)return;
@@ -349,28 +350,43 @@ function drawChart(el){
   // nhãn ngày cách đều; luôn có ngày cuối, trừ khi quá sát nhãn liền trước
   for(var i=0;i<n;i++)if(i%step===0||(i===n-1&&i%step>=step/2)){
     svg+='<text x="'+X(i)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10.5" fill="#66748b">'+dayInfo(i).lbl+'</text>';}
-  var dots='',hits='';
+  svg+='<line class="guide" x1="0" x2="0" y1="'+pt+'" y2="'+(pt+ih)+'" stroke="#14233b" stroke-opacity=".25" stroke-width="1" visibility="hidden"/>';
+  var dots='';
   SERIES.forEach(function(se,si){
-    var vals=s[se.k],sc=scaleFn(vals),d='',pen=false;
+    var vals=s[se.k],sc=scaleFn(vals,se.lo,se.hi),d='',pen=false;
     vals.forEach(function(v,i){
       if(!isNum(v)){pen=false;return;}
       var x=X(i),y=Y(sc(v));d+=(pen?'L':'M')+x.toFixed(1)+' '+y.toFixed(1);pen=true;
-      dots+='<circle cx="'+x+'" cy="'+y+'" r="3.6" fill="'+se.color+'" stroke="#fff" stroke-width="1.5"/>';
-      hits+='<circle class="hit" cx="'+x+'" cy="'+y+'" r="10" data-s="'+si+'" data-i="'+i+'"/>';
+      dots+='<circle class="pt" data-i="'+i+'" cx="'+x+'" cy="'+y+'" r="3.6" fill="'+se.color+'" stroke="#fff" stroke-width="1.5"/>';
     });
     svg+='<path d="'+d+'" fill="none" stroke="'+se.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   });
+  // vùng bắt chuột: mỗi ngày một cột cao hết biểu đồ
+  var hits='',cw=n>1?iw/(n-1):iw;
+  for(var j=0;j<n;j++)hits+='<rect class="hit" data-i="'+j+'" x="'+(X(j)-cw/2)+'" y="0" width="'+cw+'" height="'+H+'"/>';
   el.innerHTML=svg+dots+hits+'</svg><div class="tip" hidden></div>';
 }
 function drawCharts(){var els=document.querySelectorAll('.row.open .chart');for(var i=0;i<els.length;i++)drawChart(els[i]);}
 function showTip(c){
   var el=c.closest('.chart'),ref=chartRefs[el.getAttribute('data-chart')];if(!ref)return;
-  var se=SERIES[+c.getAttribute('data-s')],i=+c.getAttribute('data-i'),v=trendSeries(ref.brand,ref.region)[se.k][i],di=dayInfo(i);
-  var tip=el.querySelector('.tip'),x=+c.getAttribute('cx'),y=+c.getAttribute('cy');
-  tip.innerHTML='<i style="background:'+se.color+'"></i>'+se.name+' · '+di.dow+' '+di.lbl+'<br><b>'+full(v)+'</b>';
+  var i=+c.getAttribute('data-i'),s=trendSeries(ref.brand,ref.region),di=dayInfo(i),x=null;
+  var pts=el.querySelectorAll('.pt');
+  for(var k=0;k<pts.length;k++){var on=+pts[k].getAttribute('data-i')===i;pts[k].setAttribute('r',on?5.5:3.6);if(on)x=+pts[k].getAttribute('cx');}
+  if(x==null)return;
+  var g=el.querySelector('.guide');g.setAttribute('x1',x);g.setAttribute('x2',x);g.setAttribute('visibility','visible');
+  var tip=el.querySelector('.tip');
+  tip.innerHTML='<div style="color:var(--muted);font-weight:700">'+di.dow+' '+di.lbl+'</div>'+SERIES.map(function(se){
+    return '<div><i style="background:'+se.color+'"></i>'+se.name+': <b>'+full(s[se.k][i])+'</b></div>';}).join('');
   tip.hidden=false;
-  var w=tip.offsetWidth,W=el.clientWidth;
-  tip.style.left=Math.max(w/2,Math.min(W-w/2,x))+'px';tip.style.top=y+'px';
+  // đặt tooltip cạnh vạch dọc, lật sang trái khi gần mép phải
+  var w=tip.offsetWidth,W=el.clientWidth,left=x+12;
+  if(left+w>W)left=x-12-w; if(left<0)left=Math.max(0,Math.min(W-w,x-w/2));
+  tip.style.left=left+'px';tip.style.top='0px';
+}
+function hideTip(el){
+  var t=el.querySelector('.tip');if(t)t.hidden=true;
+  var g=el.querySelector('.guide');if(g)g.setAttribute('visibility','hidden');
+  var pts=el.querySelectorAll('.pt');for(var k=0;k<pts.length;k++)pts[k].setAttribute('r',3.6);
 }
 var chartRefs={};
 
@@ -530,7 +546,7 @@ document.addEventListener('click',function(e){
 });
 // tooltip biểu đồ: rê chuột (desktop) hoặc chạm (điện thoại)
 document.addEventListener('pointerover',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
-document.addEventListener('pointerout',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c&&e.pointerType==='mouse'){var t=c.closest('.chart').querySelector('.tip');if(t)t.hidden=true;}});
+document.addEventListener('pointerout',function(e){var el=e.target.closest&&e.target.closest('.chart');if(el&&e.pointerType==='mouse'&&!(e.relatedTarget&&el.contains(e.relatedTarget)))hideTip(el);});
 document.addEventListener('pointerdown',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
 var rsz;window.addEventListener('resize',function(){clearTimeout(rsz);rsz=setTimeout(drawCharts,120);});
 var lastLoad=0,_load=load;
