@@ -377,14 +377,14 @@ function showTip(c){
   var tip=el.querySelector('.tip');
   tip.innerHTML='<div style="color:var(--muted);font-weight:700">'+di.dow+' '+di.lbl+'</div>'+SERIES.map(function(se){
     return '<div><i style="background:'+se.color+'"></i>'+se.name+': <b>'+full(s[se.k][i])+'</b></div>';}).join('');
-  tip.hidden=false;
+  tip.hidden=false;el.setAttribute('data-day',i);
   // đặt tooltip cạnh vạch dọc, lật sang trái khi gần mép phải
   var w=tip.offsetWidth,W=el.clientWidth,left=x+12;
   if(left+w>W)left=x-12-w; if(left<0)left=Math.max(0,Math.min(W-w,x-w/2));
   tip.style.left=left+'px';tip.style.top='0px';
 }
 function hideTip(el){
-  var t=el.querySelector('.tip');if(t)t.hidden=true;
+  var t=el.querySelector('.tip');if(t)t.hidden=true;el.removeAttribute('data-day');
   var g=el.querySelector('.guide');if(g)g.setAttribute('visibility','hidden');
   var pts=el.querySelectorAll('.pt');for(var k=0;k<pts.length;k++)pts[k].setAttribute('r',3.6);
 }
@@ -545,9 +545,16 @@ document.addEventListener('click',function(e){
     if(state.open[rid]){var ch=r.querySelector('.chart');if(ch)drawChart(ch);}}
 });
 // tooltip biểu đồ: rê chuột (desktop) hoặc chạm (điện thoại)
-document.addEventListener('pointerover',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
+document.addEventListener('pointerover',function(e){if(e.pointerType!=='mouse')return;var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
 document.addEventListener('pointerout',function(e){var el=e.target.closest&&e.target.closest('.chart');if(el&&e.pointerType==='mouse'&&!(e.relatedTarget&&el.contains(e.relatedTarget)))hideTip(el);});
-document.addEventListener('pointerdown',function(e){var c=e.target.closest&&e.target.closest('.chart .hit');if(c)showTip(c);});
+// chạm: mở box của ngày; chạm lại đúng ngày đó hoặc chạm ra ngoài biểu đồ thì đóng box
+document.addEventListener('pointerdown',function(e){
+  var c=e.target.closest&&e.target.closest('.chart .hit'),own=c&&c.closest('.chart');
+  var open=document.querySelectorAll('.chart[data-day]');
+  for(var k=0;k<open.length;k++)if(open[k]!==own)hideTip(open[k]);
+  if(!c)return;
+  if(e.pointerType!=='mouse'&&own.getAttribute('data-day')===c.getAttribute('data-i'))hideTip(own);else showTip(c);
+});
 var rsz;window.addEventListener('resize',function(){clearTimeout(rsz);rsz=setTimeout(drawCharts,120);});
 var lastLoad=0,_load=load;
 load=function(){lastLoad=Date.now();_load();};
