@@ -499,7 +499,7 @@ function fetchJson(url,ms){
 var liveBusy=false;
 function monthFile(){return state.month?'data-'+encodeURIComponent(state.month)+'.json':'data.json';}
 function loadStatic(){return fetchJson(DATA_BASE+'/'+monthFile()+'?t='+Math.floor(Date.now()/60000),20000);}
-function loadLive(){return fetchJson(APPS_URL+(APPS_URL.indexOf('?')<0?'?':'&')+'data=1&month='+encodeURIComponent(state.month||'')+'&_='+Date.now(),90000);}
+function loadLive(fresh){return fetchJson(APPS_URL+(APPS_URL.indexOf('?')<0?'?':'&')+'data=1'+(fresh?'&fresh=1':'')+'&month='+encodeURIComponent(state.month||'')+'&_='+Date.now(),90000);}
 function load(){
   if(state.loading)return;state.loading=true;
   var key='kd2:'+(state.month||'auto');
@@ -558,7 +558,26 @@ document.addEventListener('pointerdown',function(e){
 var rsz;window.addEventListener('resize',function(){clearTimeout(rsz);rsz=setTimeout(drawCharts,120);});
 var lastLoad=0,_load=load;
 load=function(){lastLoad=Date.now();_load();};
-$('refresh').addEventListener('click',function(){load();});
+function flash(msg,err){var d=document.createElement('div');d.className='notice'+(err?' err':'');d.style.cssText=err?'':'background:var(--good-bg);color:var(--good)';d.textContent=msg;$('notices').appendChild(d);setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d);},err?12000:6000);}
+var forcing=false;
+// Nút Làm mới: bỏ qua mọi bản lưu/cache, đọc thẳng Google Sheet (có thể mất vài giây đến ~1 phút)
+function forceRefresh(){
+  if(forcing)return;forcing=true;
+  var btn=$('refresh'),label=btn.textContent;btn.disabled=true;btn.textContent='Đang lấy số mới…';
+  var key='kd2:'+(state.month||'auto');
+  var ok=function(d){forcing=false;btn.disabled=false;btn.textContent=label;
+    if(!d||d.error||!d.brands){flash('Không lấy được số mới: '+(d&&d.error||'dữ liệu rỗng')+'. Đang hiển thị số cũ.',true);return;}
+    state.data=d;lsSet(key,d);render();lastLoad=Date.now();flash('Đã lấy số mới nhất từ Google Sheet.');};
+  var ko=function(e){forcing=false;btn.disabled=false;btn.textContent=label;flash('Không lấy được số mới: '+(e&&e.message?e.message:e)+'. Đang hiển thị số cũ, bấm lại để thử lại.',true);};
+  if(window.google&&google.script&&google.script.run){
+    google.script.run.withSuccessHandler(ok).withFailureHandler(ko).getDashboardData(state.month||'',true);
+  }else if(APPS_URL){
+    loadLive(true).then(ok,ko);
+  }else{
+    fetchJson('data.json?'+Date.now(),15000).then(ok,ko);
+  }
+}
+$('refresh').addEventListener('click',forceRefresh);
 $('month').addEventListener('change',function(e){state.month=e.target.value;load();});
 // trong giờ số liệu còn đổi: 2 phút/lần; ngoài giờ: 30 phút/lần (số liệu đứng yên)
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&Date.now()-lastLoad>60000)load();});
