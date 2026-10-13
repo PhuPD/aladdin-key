@@ -179,7 +179,7 @@ footer li{margin:4px 0}
         <li><b>Doanh thu, Lượt mua, Giá lượt mua, Ads/DT</b>: theo cột "Tốc độ tháng" của sheet (giá lượt mua và Ads/DT = mục tiêu ÷ thực tế, nên 100% trở lên là tốt).</li>
         <li><b>Chi phí Ads</b> (nhịp tiêu ngân sách): 90–100% xanh lá chuẩn; 80–&lt;90% vàng hơi chậm; &gt;100% hoặc &lt;80% đỏ.</li>
         <li><b>Thanh nhỏ</b>: thang 0–150%, vạch đen = 100%; riêng Chi phí có dải xanh 90–100%.</li>
-        <li><b>3 bảng hành động</b> (mỗi khu vực thuộc đúng 1 nhóm). <b>Giảm</b>: Ads/DT vượt trần hơn 10% và (DT đã đạt → giảm 20–30%; hoặc giá lượt mua đắt → giảm 15–20%). <b>Tăng</b>: Ads/DT trong trần (kể cả sát trần 90–100%), giá lượt mua rẻ, DT chưa đạt → tăng 10–15% phễu Mua, riêng DT dưới 80% thì tăng 15–20%. <b>Giữ &amp; tối ưu</b>: DT đã đạt (không bơm thêm); hoặc giá lượt mua đắt (sửa content/offer trước); hoặc Ads/DT vượt trần nhưng giá rẻ (giữ tổng ngân sách, cắt Biết+Tin dồn sang phễu Mua).</li>
+        <li><b>3 bảng hành động</b> (mỗi khu vực thuộc đúng 1 nhóm). <b>Giảm</b>: Ads/DT vượt trần hơn 10% và (DT đã đạt → giảm 20–30%; hoặc giá lượt mua đắt → giảm 15–20%). <b>Tăng</b>: Ads/DT trong trần (kể cả sát trần 90–100%), giá lượt mua rẻ hoặc sát mục tiêu (≥95%), DT chưa đạt → tăng 10–15% phễu Mua, riêng DT dưới 80% thì tăng 15–20%. <b>Giữ &amp; tối ưu</b>: DT đã đạt (không bơm thêm); hoặc giá lượt mua đắt, lệch trên 5% (sửa content/offer trước); hoặc Ads/DT vượt trần nhưng giá rẻ (giữ tổng ngân sách, cắt Biết+Tin dồn sang phễu Mua).</li>
         <li><b>Vòng tròn brand</b>: phần tô = % mục tiêu doanh thu tháng đã đạt; vạch đen = % thời gian đã qua. Tô vượt vạch đen = nhanh hơn nhịp.</li>
         <li>Gợi ý hành động theo quy tắc skill báo cáo MKT, chỉ để tham khảo. Mới đầu tháng, tốc độ còn dao động mạnh.</li>
       </ul>
@@ -247,8 +247,8 @@ function verdict(d){
   if(!isNum(rev))return {code:'none',label:'THIẾU SỐ LIỆU',act:'',why:'Chưa có doanh thu lũy kế.'};
   var bits=['DT '+pct(rev)];
   if(isNum(ads))bits.push('Ads/DT '+(ads>=1?'dưới trần':(ads>=.9?'sát trần':'vượt trần'))+' ('+pct(ads)+')');
-  if(isNum(cpa))bits.push('giá lượt mua '+(cpa>=1?'rẻ':'đắt')+' ('+pct(cpa)+')');
-  var why=bits.join(' · '),cpaOk=isNum(cpa)?cpa>=1:true;
+  if(isNum(cpa))bits.push('giá lượt mua '+(cpa>=1?'rẻ':(cpa>=.95?'sát mục tiêu':'đắt'))+' ('+pct(cpa)+')');
+  var why=bits.join(' · '),cpaOk=isNum(cpa)?cpa>=.95:true; // giá lượt mua lệch dưới 5% so với mục tiêu vẫn tính là ổn
   var UP='▲ TĂNG NGÂN SÁCH',HOLD='■ GIỮ & TỐI ƯU',DOWN='▼ GIẢM NGÂN SÁCH';
   // Ads/DT: chỉ coi là "vượt trần" khi lệch quá 10% (ads<0.9); 90–100% vẫn tính trong trần để 99,9% không bị kết án oan.
   var overCap=isNum(ads)&&ads<.9;
@@ -259,8 +259,8 @@ function verdict(d){
   }
   if(rev>=1)return {code:'hold',label:HOLD,act:'đã đủ số',why:why+' → DT đã đạt, không bơm thêm.'};
   if(cpaOk){
-    if(rev<.8)return {code:'up',label:UP,act:'+15–20%',why:why+' → DT chậm (<80%), giá lượt mua rẻ, Ads/DT trong trần: tăng 15–20% phễu Mua.'};
-    return {code:'up',label:UP,act:'+10–15%',why:why+' → DT chưa đạt, giá lượt mua rẻ, Ads/DT trong trần: tăng 10–15% phễu Mua.'};
+    if(rev<.8)return {code:'up',label:UP,act:'+15–20%',why:why+' → DT chậm (<80%), giá lượt mua rẻ/ổn, Ads/DT trong trần: tăng 15–20% phễu Mua.'};
+    return {code:'up',label:UP,act:'+10–15%',why:why+' → DT chưa đạt, giá lượt mua rẻ/ổn, Ads/DT trong trần: tăng 10–15% phễu Mua.'};
   }
   return {code:'hold',label:HOLD,act:'sửa giá mua',why:why+' → giá lượt mua đắt: xử lý content/offer trước khi tăng tiền.'};
 }
