@@ -508,7 +508,9 @@ function loadLive(fresh){return fetchJson(APPS_URL+(APPS_URL.indexOf('?')<0?'?':
 function load(){
   if(state.loading)return;state.loading=true;
   var key='kd2:'+(state.month||'auto');
-  var accept=function(d){if(d&&d.error)throw new Error(d.error);state.data=d;lsSet(key,d);render();};
+  // không lùi về bản cũ hơn: số từ nút "Làm mới" (lưu máy) mới hơn file tĩnh thì giữ nguyên
+  var newer=function(d){var c=state.data;return !c||c.month!==d.month||!c.generatedAt||!d.generatedAt||d.generatedAt>=c.generatedAt;};
+  var accept=function(d){if(d&&d.error)throw new Error(d.error);if(!newer(d)){render();return;}state.data=d;lsSet(key,d);render();};
   var done=function(d){state.loading=false;try{accept(d);}catch(e){fail(e.message);}};
   var bad=function(e){state.loading=false;fail(e&&e.message?e.message:String(e));};
   if(window.google&&google.script&&google.script.run){
@@ -516,7 +518,9 @@ function load(){
   }else if(DATA_BASE){
     // 1) file tĩnh: hiện ngay; 2) nếu lỗi thì gọi Apps Script; 3) nền: thử nâng cấp lên số live
     loadStatic().then(done,function(){return APPS_URL?loadLive().then(done,bad):bad(new Error('không đọc được file dữ liệu'));}).then(function(){
-      if(!APPS_URL||liveBusy||!inChangeWindow())return; liveBusy=true;
+      // gọi số live khi đang giờ nhập liệu, hoặc khi số đang hiện đã cũ hơn 10 phút (sheet có thể sửa ngoài giờ)
+      var age=state.data&&state.data.generatedAt?Date.now()-new Date(state.data.generatedAt).getTime():Infinity;
+      if(!APPS_URL||liveBusy||!(inChangeWindow()||age>600000))return; liveBusy=true;
       loadLive().then(function(d){
         liveBusy=false;
         if(!d||d.error||!d.brands)return;
