@@ -311,20 +311,23 @@ function tableHtml(brand,region){
 }
 
 /* ── biểu đồ xu hướng: mỗi chỉ số tự co giãn theo chính nó (cao nhất = đỉnh, thấp nhất = đáy; chỉ giá trị 0 mới chạm trục).
-   Đỉnh/đáy của từng chỉ số lệch nhau ~6% chiều cao để các chấm ít trùng khít; rê chuột theo cột ngày hiện đủ 3 số. ── */
+   Đỉnh/đáy của từng chỉ số lệch nhau ~6% chiều cao để các chấm ít trùng khít; rê chuột theo cột ngày hiện đủ 4 số.
+   Giá lượt mua = chi phí phễu Mua ÷ lượt mua trong ngày (ưu tiên số ngày của sheet); ngày 0 lượt mua thì để trống, đường bị ngắt. ── */
 var SERIES=[
   {k:'rev',name:'Doanh thu thuần',color:'#2a78d6',lo:.18,hi:1},
   {k:'cost',name:'Tổng chi phí Ads',color:'#eb6834',lo:.12,hi:.94},
-  {k:'buy',name:'Lượt mua',color:'#1baf7a',lo:.06,hi:.88}
+  {k:'buy',name:'Lượt mua',color:'#1baf7a',lo:.06,hi:.88},
+  {k:'cpa',name:'Giá lượt mua',color:'#8b5cf6',lo:.09,hi:.82}
 ];
 function trendSeries(brand,region){
   var n=Math.max(0,lastDay(brand)+1),pick=function(k){var x=row(region,k);return x&&x.daily?x.daily:[];};
-  var rev=pick('rev'),fb=pick('fb'),mkt=pick('mkt'),buy=pick('buy'),out={n:n};
-  out.rev=[];out.cost=[];out.buy=[];
+  var rev=pick('rev'),fb=pick('fb'),mkt=pick('mkt'),buy=pick('buy'),cpa=pick('cpa'),out={n:n};
+  out.rev=[];out.cost=[];out.buy=[];out.cpa=[];
   for(var i=0;i<n;i++){
     out.rev.push(isNum(rev[i])?rev[i]:null);
     out.cost.push((isNum(fb[i])||isNum(mkt[i]))?(fb[i]||0)+(mkt[i]||0):null);
     out.buy.push(isNum(buy[i])?buy[i]:null);
+    out.cpa.push(isNum(cpa[i])&&cpa[i]>0?cpa[i]:(isNum(mkt[i])&&isNum(buy[i])&&buy[i]>0?mkt[i]/buy[i]:null));
   }
   return out;
 }
@@ -335,7 +338,7 @@ function trendHtml(brand,region){
   return '<div class="trend"><div class="trend-h"><b>Xu hướng theo ngày</b><div class="lgd">'+
     SERIES.map(function(x){return '<span><i style="background:'+x.color+'"></i>'+x.name+'</span>';}).join('')+'</div></div>'+
     '<div class="chart" data-chart="'+esc(brand.key+'|'+region.name)+'"></div>'+
-    '<div class="trend-n">Mỗi đường tự co giãn theo thang riêng (ngày cao nhất ở đỉnh, thấp nhất ở đáy, chỉ giá trị 0 chạm trục) để so xu hướng; rê chuột / chạm vào một ngày để xem đủ 3 số.</div></div>';
+    '<div class="trend-n">Mỗi đường tự co giãn theo thang riêng (ngày cao nhất ở đỉnh, thấp nhất ở đáy, chỉ giá trị 0 chạm trục) để so xu hướng; ngày 0 lượt mua thì giá lượt mua để trống; rê chuột / chạm vào một ngày để xem đủ 4 số.</div></div>';
 }
 function scaleFn(vals,lo,hi){
   var nz=vals.filter(function(v){return isNum(v)&&v>0;});
@@ -349,7 +352,7 @@ function drawChart(el){
   var H=el.clientHeight||210,pl=14,pr=14,pt=14,pb=24,iw=W-pl-pr,ih=H-pt-pb;
   var s=trendSeries(ref.brand,ref.region),n=s.n;
   var X=function(i){return n>1?pl+i*iw/(n-1):pl+iw/2;},Y=function(f){return pt+ih*(1-f);};
-  var svg='<svg width="'+W+'" height="'+H+'" role="img" aria-label="Xu hướng doanh thu, chi phí, lượt mua theo ngày">';
+  var svg='<svg width="'+W+'" height="'+H+'" role="img" aria-label="Xu hướng doanh thu, chi phí, lượt mua, giá lượt mua theo ngày">';
   [0,.5,1].forEach(function(f){svg+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(f)+'" y2="'+Y(f)+'" stroke="'+(f?'#eef2f8':'#c9d3e1')+'" stroke-width="1"/>';});
   var step=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(iw/38))));
   // nhãn ngày cách đều; luôn có ngày cuối, trừ khi quá sát nhãn liền trước
